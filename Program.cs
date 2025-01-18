@@ -3,9 +3,12 @@
 using System;
 using System.Diagnostics;
 using System.Globalization;
+using System.Management;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using static System.Runtime.InteropServices.JavaScript.JSType;
+using static Program;
 
 class Program
 {
@@ -28,33 +31,6 @@ class Program
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct SYSTEM_PROCESS_INFORMATION
     {
-        //public uint NextEntryOffset;
-        //public uint NumberOfThreads;
-        //// Other fields omitted for brevity
-        //public IntPtr WorkingSetPrivateSize;
-        //public ulong VirtualSize;
-        //internal IntPtr UniqueProcessId;
-        //internal uint NextEntryOffset;
-        //internal uint NumberOfThreads;
-        //internal int BasePriority;
-        //internal IntPtr UniqueProcessId;
-        //private readonly UIntPtr Reserved2;
-        //internal uint HandleCount;
-        //internal uint SessionId;
-        //private readonly UIntPtr Reserved3;
-        //internal UIntPtr PeakVirtualSize;  // SIZE_T
-        //internal UIntPtr VirtualSize;
-        //private readonly uint Reserved4;
-        //internal UIntPtr PeakWorkingSetSize;  // SIZE_T
-        //internal UIntPtr WorkingSetSize;  // SIZE_T
-        //private readonly UIntPtr Reserved5;
-        //internal UIntPtr QuotaPagedPoolUsage;  // SIZE_T
-        //private readonly UIntPtr Reserved6;
-        //internal UIntPtr QuotaNonPagedPoolUsage;  // SIZE_T
-        //internal UIntPtr PagefileUsage;  // SIZE_T
-        //internal UIntPtr PeakPagefileUsage;  // SIZE_T
-        //internal UIntPtr PrivatePageCount;  // SIZE_T
-
         internal uint NextEntryOffset;
         internal uint NumberOfThreads;
         private fixed byte Reserved1[48];
@@ -79,6 +55,26 @@ class Program
         internal UIntPtr PrivatePageCount;  // SIZE_T
         private fixed long Reserved7[6];
 
+    }
+
+    [DllImport("KERNEL32.DLL")]
+    private static extern int OpenProcess(uint dwDesiredAccess, int bInheritHandle, uint dwProcessId);
+
+    [DllImport("psapi.dll", SetLastError = true)] public static extern int GetProcessMemoryInfo(IntPtr handle, ref PROCESS_MEMORY_COUNTERS_EX pmc, int cb);
+    [StructLayout(LayoutKind.Sequential)] 
+    public struct PROCESS_MEMORY_COUNTERS_EX 
+    {
+        public uint cb;
+        public uint PageFaultCount;
+        public ulong PeakWorkingSetSize;
+        public ulong WorkingSetSize;
+        public ulong QuotaPeakPagedPoolUsage;
+        public ulong QuotaPagedPoolUsage;
+        public ulong QuotaPeakNonPagedPoolUsage;
+        public ulong QuotaNonPagedPoolUsage;
+        public ulong PagefileUsage;
+        public ulong PeakPagefileUsage;
+        public ulong PrivateUsage; 
     }
 
     [DllImportAttribute("ntdll.dll", EntryPoint = "NtQuerySystemInformation", ExactSpelling = true)]
@@ -140,108 +136,125 @@ class Program
 
         for (int i = 0; i < 1000; i++)
         {
-            using var p = Process.GetCurrentProcess();
-            var gcTotalAvailableMemoryBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
-            Console.WriteLine($"process.VirtualMemorySize64: {p.VirtualMemorySize64 / LONG_MB_DIVISOR} MB");
-            Console.WriteLine($"GC.GetGCMemoryInfo().TotalAvailableMemoryBytes: {gcTotalAvailableMemoryBytes / LONG_MB_DIVISOR} MB");
+            using (var p = Process.GetCurrentProcess())
+            {
+                var gcTotalAvailableMemoryBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+                Console.WriteLine($"process.VirtualMemorySize64: {p.VirtualMemorySize64 / LONG_MB_DIVISOR} MB");
+                Console.WriteLine($"GC.GetGCMemoryInfo().TotalAvailableMemoryBytes: {gcTotalAvailableMemoryBytes / LONG_MB_DIVISOR} MB");
 
-            MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX();
-            if (GlobalMemoryStatusEx(memStatus))
-            {
-                Console.WriteLine($"Memory Load: {memStatus.dwMemoryLoad}%");
-                Console.WriteLine($"Avail Virtual Memory: {memStatus.ullAvailVirtual / MB_DIVISOR} MB");
-                Console.WriteLine($"Total Virtual Memory: {memStatus.ullTotalVirtual / MB_DIVISOR} MB");
-                Console.WriteLine($"Total Page File: {memStatus.ullTotalPageFile / MB_DIVISOR} MB");
-                Console.WriteLine($"Available Page File: {memStatus.ullAvailPageFile / MB_DIVISOR} MB");
-                Console.WriteLine($"Total Phys: {memStatus.ullTotalPhys / MB_DIVISOR} MB");
-                Console.WriteLine($"Avail Phys: {memStatus.ullAvailPhys / MB_DIVISOR} MB");
-            }
-            else
-            {
-                Console.WriteLine("Unable to get memory status.");
-            }
-
-            uint actualSize = 0;
-            uint buffersize = 1024 * 1024;
-            void* bufferPtr = NativeMemory.Alloc(buffersize);
-            try 
-            {
-                // First call to NtQuerySystemInformation to get the size of the buffer needed
-                uint status = NtQuerySystemInformation(SystemProcessInformation, bufferPtr, buffersize, &actualSize); 
-                if (status != 0xc0000004 && status != 0) // STATUS_INFO_LENGTH_MISMATCH
+                MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX();
+                if (GlobalMemoryStatusEx(memStatus))
                 {
-                    uint lastError = GetLastError();
-                    throw new Exception("NtQuerySystemInformation failed with status: " + status + ", error code: "+ lastError);
+                    Console.WriteLine($"Memory Load: {memStatus.dwMemoryLoad}%");
+                    Console.WriteLine($"Avail Virtual Memory: {memStatus.ullAvailVirtual / MB_DIVISOR} MB");
+                    Console.WriteLine($"Total Virtual Memory: {memStatus.ullTotalVirtual / MB_DIVISOR} MB");
+                    Console.WriteLine($"Total Page File: {memStatus.ullTotalPageFile / MB_DIVISOR} MB");
+                    Console.WriteLine($"Available Page File: {memStatus.ullAvailPageFile / MB_DIVISOR} MB");
+                    Console.WriteLine($"Total Phys: {memStatus.ullTotalPhys / MB_DIVISOR} MB");
+                    Console.WriteLine($"Avail Phys: {memStatus.ullAvailPhys / MB_DIVISOR} MB");
                 }
-                
-                var buffer = Marshal.AllocHGlobal((int)actualSize);
-                //// Second call to NtQuerySystemInformation to get the actual data
-                if (status == 0)
+                else
                 {
-                    // Use a dictionary to avoid duplicate entries if any
-                    // 60 is a reasonable number for processes on a normal machine.
-                    Dictionary<int, ProcessInfo> processInfos = new Dictionary<int, ProcessInfo>(60);
+                    Console.WriteLine("Unable to get memory status.");
+                }
 
-                    int processInformationOffset = 0;
-
-                    while (true)
+                uint actualSize = 0;
+                uint buffersize = 1024 * 1024;
+                void* bufferPtr = NativeMemory.Alloc(buffersize);
+                try
+                {
+                    // First call to NtQuerySystemInformation to get the size of the buffer needed
+                    uint status = NtQuerySystemInformation(SystemProcessInformation, bufferPtr, buffersize, &actualSize);
+                    if (status != 0xc0000004 && status != 0) // STATUS_INFO_LENGTH_MISMATCH
                     {
-                        var data = new ReadOnlySpan<byte>(bufferPtr, (int)actualSize);
-                        ref readonly SYSTEM_PROCESS_INFORMATION pi = ref MemoryMarshal.AsRef<SYSTEM_PROCESS_INFORMATION>(data.Slice(processInformationOffset));
-
-                        //// Process ID shouldn't overflow. OS API GetCurrentProcessID returns DWORD.
-                        var processId = pi.UniqueProcessId.ToInt64();
-                        if (Environment.ProcessId == processId)
-                        {
-                            Console.WriteLine("Virtual size: " + (long)pi.VirtualSize / LONG_MB_DIVISOR);
-                            //    string? processName = null;
-                            //    ReadOnlySpan<char> processNameSpan =
-                            //        pi.ImageName.Buffer != IntPtr.Zero ? GetProcessShortName(new ReadOnlySpan<char>(pi.ImageName.Buffer.ToPointer(), pi.ImageName.Length / sizeof(char))) :
-                            //        (processName =
-                            //            processId == NtProcessManager.SystemProcessID ? "System" :
-                            //            processId == NtProcessManager.IdleProcessID ? "Idle" :
-                            //            processId.ToString(CultureInfo.InvariantCulture)); // use the process ID for a normal process without a name
-
-                            //    if (string.IsNullOrEmpty(processNameFilter) || processNameSpan.Equals(processNameFilter, StringComparison.OrdinalIgnoreCase))
-                            //    {
-                            //        processName ??= processNameSpan.ToString();
-
-                            //        // get information for a process
-                            //        ProcessInfo processInfo = new ProcessInfo()
-                            //        {
-                            //            ProcessName = processName,
-                            //            ProcessId = processId,
-                            //            VirtualBytes = (long)pi.VirtualSize,
-                            //        };
-
-                            //        processInfos[processInfo.ProcessId] = processInfo;
-                            //    }
-                        }
-
-                        if (pi.NextEntryOffset == 0)
-                        {
-                            break;
-                        }
-                        processInformationOffset += (int)pi.NextEntryOffset;
+                        uint lastError = GetLastError();
+                        throw new Exception("NtQuerySystemInformation failed with status: " + status + ", error code: " + lastError);
                     }
 
-                    //Console.WriteLine("Number of threads: " + spi.NumberOfThreads); 
-                }
-                //else 
-                //{
-                //    throw new Exception("NtQuerySystemInformation failed with status: " + status); 
-                //} 
-            } 
-            finally 
-            {
-                NativeMemory.Free(bufferPtr);
-                //if (buffer != IntPtr.Zero) 
-                //{
-                //    Marshal.FreeHGlobal(buffer); 
-                //}
-            }
+                    var buffer = Marshal.AllocHGlobal((int)actualSize);
+                    //// Second call to NtQuerySystemInformation to get the actual data
+                    if (status == 0)
+                    {
+                        // Use a dictionary to avoid duplicate entries if any
+                        // 60 is a reasonable number for processes on a normal machine.
+                        Dictionary<int, ProcessInfo> processInfos = new Dictionary<int, ProcessInfo>(60);
 
-            Task.Delay(5000).Wait();
+                        int processInformationOffset = 0;
+
+                        while (true)
+                        {
+                            var data = new ReadOnlySpan<byte>(bufferPtr, (int)actualSize);
+                            ref readonly SYSTEM_PROCESS_INFORMATION pi = ref MemoryMarshal.AsRef<SYSTEM_PROCESS_INFORMATION>(data.Slice(processInformationOffset));
+
+                            //// Process ID shouldn't overflow. OS API GetCurrentProcessID returns DWORD.
+                            var processId = pi.UniqueProcessId.ToInt64();
+                            if (Environment.ProcessId == processId)
+                            {
+                                var longSize = (long)pi.VirtualSize;
+                                Console.WriteLine("Virtual size: " + longSize / LONG_MB_DIVISOR);
+                            }
+
+                            if (pi.NextEntryOffset == 0)
+                            {
+                                break;
+                            }
+                            processInformationOffset += (int)pi.NextEntryOffset;
+                        }
+
+                        //Console.WriteLine("Number of threads: " + spi.NumberOfThreads); 
+                    }
+                }
+                finally
+                {
+                    NativeMemory.Free(bufferPtr);
+                }
+
+                // Get the handle to the process IntPtr processHandle = currentProcess.Handle; 
+                // Create an instance of PROCESS_MEMORY_COUNTERS_EX
+                PROCESS_MEMORY_COUNTERS_EX pmc = new PROCESS_MEMORY_COUNTERS_EX();
+                // Call GetProcessMemoryInfo to get memory information
+                // var size = Marshal.SizeOf(typeof(_PROCESS_MEMORY_COUNTERS_EX2)) + 30;
+                //pmc.cb = (uint)Marshal.SizeOf(typeof(_PROCESS_MEMORY_COUNTERS_EX2));
+                int pHandle = (int)p.Handle;
+                // Get the handle to the process
+                IntPtr processHandle = p.Handle;
+                int memExStatus = GetProcessMemoryInfo(pHandle, ref pmc, 80);
+                if (memExStatus != 0)
+                {
+                    Console.WriteLine($"Private usage: {pmc.WorkingSetSize / LONG_MB_DIVISOR} bytes");
+                }
+                else
+                {
+                    uint error = GetLastError();
+                    var msg = GetErrorMessage((int)error);
+                    Console.WriteLine("Failed to get process memory information.");
+                }
+
+                // Create a new management scope
+                ManagementScope scope = new ManagementScope(@"\\.\root\cimv2");
+
+                // Create a new object query
+                ObjectQuery query = new ObjectQuery($"SELECT * FROM Win32_Process WHERE ProcessId = {Environment.ProcessId}");
+
+                // Create a new management object searcher
+                ManagementObjectSearcher searcher = new ManagementObjectSearcher(scope, query);
+
+                // Get the collection of management objects
+                ManagementObjectCollection processes = searcher.Get();
+
+                // Iterate through the collection and display process information
+                foreach (ManagementObject process in processes)
+                {
+                    Console.WriteLine($"Process Name: {process["Name"]}");
+                    Console.WriteLine($"Process ID: {process["ProcessId"]}");
+                    Console.WriteLine($"Executable Path: {process["ExecutablePath"]}");
+                    Console.WriteLine($"Virtual Size: {(UInt64)process["VirtualSize"] / LONG_MB_DIVISOR}");
+                    Console.WriteLine($"Working Set: {(UInt64)process["WorkingSetSize"] / LONG_MB_DIVISOR}");
+                    Console.WriteLine();
+                }
+
+                Task.Delay(5000).Wait();
+            }
         }
     }
 }

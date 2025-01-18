@@ -5,14 +5,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
-
-  <ItemGroup>
-    <Compile Remove="ProcessDataWmi\**" />
-    <EmbeddedResource Remove="ProcessDataWmi\**" />
-    <None Remove="ProcessDataWmi\**" />
-  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Management" Version="9.0.1" />
