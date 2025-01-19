@@ -221,7 +221,7 @@ class Program
                 int memExStatus = GetProcessMemoryInfo(pHandle, ref pmc, 80);
                 if (memExStatus != 0)
                 {
-                    Console.WriteLine($"Private usage: {pmc.WorkingSetSize / LONG_MB_DIVISOR} bytes");
+                    Console.WriteLine($"Private usage: {pmc.PrivateUsage / LONG_MB_DIVISOR} MB");
                 }
                 else
                 {
