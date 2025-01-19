@@ -1,0 +1,14 @@
+{
+  "profiles": {
+    "ProcessDataWmi": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "a": ""
+      }
+    },
+    "WSL2": {
+      "commandName": "WSL2",
+      "distributionName": "Ubuntu"
+    }
+  }
+}
