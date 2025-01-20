@@ -142,15 +142,15 @@ public unsafe class Program
     {
         var p = new Program();
         //p.GetProcessNtQuerySystemInformation();
-        //var summary = BenchmarkRunner.Run<Program>();
-        for (int i = 0; i < 1000; i++)
-        {
-            var processMem = Task.Run(p.GetProcessVirtualMemorySize64);
-            var nativeMem = Task.Run(p.GetProcessNtQuerySystemInformation);
-            // var wmiMem = Task.Run(p.GetProcessVirtualSizeWMI);
+        var summary = BenchmarkRunner.Run<Program>();
+        //for (int i = 0; i < 1000; i++)
+        //{
+        //    var processMem = Task.Run(p.GetProcessVirtualMemorySize64);
+        //    var nativeMem = Task.Run(p.GetProcessNtQuerySystemInformation);
+        //    // var wmiMem = Task.Run(p.GetProcessVirtualSizeWMI);
 
-            Task.WhenAll(processMem, nativeMem).Wait();
-        }
+        //    Task.WhenAll(processMem, nativeMem).Wait();
+        //}
     }
 
     public Program()
@@ -175,7 +175,7 @@ public unsafe class Program
         using (Process p = Process.GetCurrentProcess())
         {
             var vm = p.VirtualMemorySize64;
-            Console.WriteLine($"VirtualSize {vm}");
+            //Console.WriteLine($"VirtualSize {vm}");
         }
     }
 
@@ -193,7 +193,8 @@ public unsafe class Program
                 throw new Exception("NtQuerySystemInformation failed with status: " + status + ", error code: " + lastError);
             }
 
-            var buffer = Marshal.AllocHGlobal((int)actualSize);
+            //nint buffer = Marshal.AllocHGlobal((int)actualSize);
+            var data = new ReadOnlySpan<byte>(bufferPtr, (int)actualSize);
 
             if (status == 0)
             {
@@ -202,7 +203,6 @@ public unsafe class Program
 
                 while (true)
                 {
-                    var data = new ReadOnlySpan<byte>(bufferPtr, (int)actualSize);
                     ref readonly SYSTEM_PROCESS_INFORMATION pi = ref MemoryMarshal.AsRef<SYSTEM_PROCESS_INFORMATION>(data.Slice(processInformationOffset));
 
                     //// Process ID shouldn't overflow. OS API GetCurrentProcessID returns DWORD.
@@ -210,7 +210,7 @@ public unsafe class Program
                     if (Environment.ProcessId == processId)
                     {
                         var longSize = (long)pi.VirtualSize;
-                        Console.WriteLine($"VirtualSize {longSize}");
+                        //Console.WriteLine($"VirtualSize {longSize}");
                     }
 
                     if (pi.NextEntryOffset == 0)
@@ -218,7 +218,7 @@ public unsafe class Program
                         break;
                     }
                     processInformationOffset += (int)pi.NextEntryOffset;
-                }
+                }   
 
                 //Console.WriteLine("Number of threads: " + spi.NumberOfThreads); 
             }
