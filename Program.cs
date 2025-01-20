@@ -150,7 +150,7 @@ public unsafe class Program
     {
         using (Process p = Process.GetCurrentProcess())
         {
-            Console.WriteLine($"VirtualSize {p.VirtualMemorySize64}");
+            var vm = p.VirtualMemorySize64;
         }
     }
 
@@ -185,7 +185,7 @@ public unsafe class Program
                     if (Environment.ProcessId == processId)
                     {
                         var longSize = (long)pi.VirtualSize;
-                        Console.WriteLine($"VirtualSize {longSize}");
+                        // Console.WriteLine($"VirtualSize {longSize}");
                     }
 
                     if (pi.NextEntryOffset == 0)
@@ -224,7 +224,8 @@ public unsafe class Program
             // Iterate through the collection and display process information
             foreach (ManagementObject process in processes)
             {
-                Console.WriteLine($"Virtual Size: {process["VirtualSize"]}");
+                var vm = process["VirtualSize"];
+                // Console.WriteLine($"Virtual Size: {process["VirtualSize"]}");
             }
         }
     }
