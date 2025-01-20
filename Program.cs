@@ -17,6 +17,11 @@ public unsafe class Program
 
     void* bufferPtr;
 
+    private ManagementScope scope;
+
+    private ObjectQuery query;
+
+    private ManagementObjectSearcher searcher;
 
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct SYSTEM_PROCESS_INFORMATION
@@ -135,14 +140,33 @@ public unsafe class Program
 
     static unsafe void Main()
     {
-        //var p = new Program();
+        var p = new Program();
         //p.GetProcessNtQuerySystemInformation();
-        var summary = BenchmarkRunner.Run<Program>();
+        //var summary = BenchmarkRunner.Run<Program>();
+        for (int i = 0; i < 1000; i++)
+        {
+            var processMem = Task.Run(p.GetProcessVirtualMemorySize64);
+            var nativeMem = Task.Run(p.GetProcessNtQuerySystemInformation);
+            // var wmiMem = Task.Run(p.GetProcessVirtualSizeWMI);
+
+            Task.WhenAll(processMem, nativeMem).Wait();
+        }
     }
 
     public Program()
     {
         bufferPtr = NativeMemory.Alloc(buffersize);
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            // Create a new management scope
+            scope = new ManagementScope(@"\\.\root\cimv2");
+
+            // Create a new object query
+            query = new ObjectQuery($"SELECT * FROM Win32_Process WHERE ProcessId = {Environment.ProcessId}");
+
+            // Create a new management object searcher
+            searcher = new ManagementObjectSearcher(scope, query);
+        }
     }
 
     [Benchmark]
@@ -151,6 +175,7 @@ public unsafe class Program
         using (Process p = Process.GetCurrentProcess())
         {
             var vm = p.VirtualMemorySize64;
+            Console.WriteLine($"VirtualSize {vm}");
         }
     }
 
@@ -185,7 +210,7 @@ public unsafe class Program
                     if (Environment.ProcessId == processId)
                     {
                         var longSize = (long)pi.VirtualSize;
-                        // Console.WriteLine($"VirtualSize {longSize}");
+                        Console.WriteLine($"VirtualSize {longSize}");
                     }
 
                     if (pi.NextEntryOffset == 0)
@@ -204,20 +229,11 @@ public unsafe class Program
         }
     }
 
-    [Benchmark]
+    // [Benchmark]
     public void GetProcessVirtualSizeWMI() 
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // Create a new management scope
-            ManagementScope scope = new ManagementScope(@"\\.\root\cimv2");
-
-            // Create a new object query
-            ObjectQuery query = new ObjectQuery($"SELECT * FROM Win32_Process WHERE ProcessId = {Environment.ProcessId}");
-
-            // Create a new management object searcher
-            ManagementObjectSearcher searcher = new ManagementObjectSearcher(scope, query);
-
             // Get the collection of management objects
             ManagementObjectCollection processes = searcher.Get();
 
